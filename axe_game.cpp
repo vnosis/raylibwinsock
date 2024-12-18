@@ -39,6 +39,7 @@ typedef struct{
 } Packet;
 
 void startServer(Packet& packets) {
+    std::cout << "Starting server\n";
     WSADATA wsaData;
 
     SOCKET ListenSocket = INVALID_SOCKET;
