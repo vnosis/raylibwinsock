@@ -17,6 +17,9 @@
 #include <iostream>
 #include <cstdio>
 #include <random>
+#include <string.h>
+#include <algorithm>
+#include <cstring>
 
 // Need to link with Ws2_32.lib, Mswsock.lib, and Advapi32.lib
 #pragma comment (lib, "Ws2_32.lib")
@@ -35,146 +38,233 @@ struct Player{
 };
 
 typedef struct{
-    std::vector<Player*> players;
+    std::vector<Player> players;
 } Packet;
+#define DEFAULT_BUFLEN 512
 
-void startServer(Packet& packets) {
-    std::cout << "Starting server\n";
+std::vector<char> serializePacket(const Packet& packet) {
+    std::vector<char> buffer;
+
+    size_t numPlayers = packet.players.size();
+    buffer.insert(buffer.end(), reinterpret_cast<const char*>(&numPlayers),reinterpret_cast<const char*>(&numPlayers) + sizeof(numPlayers));
+
+    for(const Player& player: packet.players) {
+        buffer.insert(buffer.end(), reinterpret_cast<const char*>(&player), reinterpret_cast<const char*>(&player) + sizeof(Player));
+    }
+
+    return buffer;
+};
+
+Packet deserializePacket(const char* data, size_t dataSize) {
+    Packet packet;
+    size_t offset = 0;
+    size_t numPlayers = 0;
+
+    std::memcpy(&numPlayers,data + offset, sizeof(numPlayers));
+    offset += sizeof(numPlayers);
+
+    for(size_t i = 0; i < numPlayers; ++i) {
+        Player player(0);
+
+        std::memcpy(&player, data + offset, sizeof(Player));
+        offset += sizeof(Player);
+        packet.players.push_back(player);
+    }
+
+    return packet;
+};
+
+
+
+int startServer(Packet& packets) {
+    /*Player client(rand()%1000);
+    packets.players.push_back(client);
+    client.x      = 50;
+    client.y      = 50;
+    client.radius = 50;*/
     WSADATA wsaData;
+    int iResult;
+
+    char recvBuffer[1024];
 
     SOCKET ListenSocket = INVALID_SOCKET;
     SOCKET ClientSocket = INVALID_SOCKET;
 
-    struct addrinfo* result = NULL;
+    struct addrinfo *result = NULL;
     struct addrinfo hints;
 
-    if(WSAStartup(MAKEWORD(2,2), &wsaData) != 0) {
-        printf("WSAStartup failed with error: \n");
-        exit(1);
+    int iSendResult;
+    char recvbuf[DEFAULT_BUFLEN];
+    int recvbuflen = DEFAULT_BUFLEN;
+    
+    // Initialize Winsock
+    iResult = WSAStartup(MAKEWORD(2,2), &wsaData);
+    if (iResult != 0) {
+        printf("WSAStartup failed with error: %d\n", iResult);
+        return 1;
     }
 
     ZeroMemory(&hints, sizeof(hints));
-    hints.ai_family   = AF_INET;
+    hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_protocol = IPPROTO_TCP;
-    hints.ai_flags    = AI_PASSIVE;
+    hints.ai_flags = AI_PASSIVE;
 
-    if(getaddrinfo(NULL, DEFAULT_PORT, &hints, &result)){
-        std::cout << "getaddrinfo failed with error: \n";
-        exit(1);
+    // Resolve the server address and port
+    iResult = getaddrinfo(NULL, DEFAULT_PORT, &hints, &result);
+    if ( iResult != 0 ) {
+        printf("getaddrinfo failed with error: %d\n", iResult);
+        WSACleanup();
+        return 1;
     }
 
+    // Create a SOCKET for the server to listen for client connections.
     ListenSocket = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
-    if(ListenSocket == INVALID_SOCKET) {
+    if (ListenSocket == INVALID_SOCKET) {
         printf("socket failed with error: %d\n", WSAGetLastError());
         freeaddrinfo(result);
         WSACleanup();
-        exit(1);
+        return 1;
     }
 
-    if(bind(ListenSocket, result->ai_addr, (int)result->ai_addrlen)) {
+    // Setup the TCP listening socket
+    iResult = bind( ListenSocket, result->ai_addr, (int)result->ai_addrlen);
+    if (iResult == SOCKET_ERROR) {
         printf("bind failed with error: %d\n", WSAGetLastError());
         freeaddrinfo(result);
         closesocket(ListenSocket);
         WSACleanup();
-        exit(1);
+        return 1;
     }
 
     freeaddrinfo(result);
 
-    if(listen(ListenSocket, SOMAXCONN)){
+    iResult = listen(ListenSocket, SOMAXCONN);
+    if (iResult == SOCKET_ERROR) {
         printf("listen failed with error: %d\n", WSAGetLastError());
         closesocket(ListenSocket);
         WSACleanup();
-        exit(1);
+        return 1;
     }
 
+    // Accept a client socket
     ClientSocket = accept(ListenSocket, NULL, NULL);
-    if(ClientSocket == INVALID_SOCKET) {
+    if (ClientSocket == INVALID_SOCKET) {
         printf("accept failed with error: %d\n", WSAGetLastError());
-        closesocket(ClientSocket);
+        closesocket(ListenSocket);
         WSACleanup();
-        exit(1);
+        return 1;
     }
 
+    // No longer need server socket
     closesocket(ListenSocket);
 
-    int iResult =1, iSendResult =1;
-
+    // Receive until the peer shuts down the connection
     do {
 
-        iResult = recv(ClientSocket, (char*)&packets,sizeof packets, 0);
-            for(size_t i = 0; i < packets.players.size(); i++) {
-                std::cout << packets.players[i]->id << std::endl;
-            }
-            if (iResult > 0){
-                iSendResult = send(ClientSocket, (char*)&packets, iResult,0);
-                if(iSendResult == SOCKET_ERROR) {
-                    printf("send failed with error: %d\n", WSAGetLastError());
-                    closesocket(ClientSocket);
-                    WSACleanup();
-                    exit(1);
-                }
+        iResult = recv(ClientSocket, recvBuffer, sizeof recvBuffer, 0);
+        if (iResult > 0) {
+            printf("Bytes received: %d\n", iResult);
 
+            packets = deserializePacket(recvBuffer,iResult);
+
+            for(size_t i = 0; i < packets.players.size(); ++i) {
+                std::cout << packets.players[i].id << std::endl;
+                std::cout << packets.players[i].y << std::endl;
+                std::cout << packets.players[i].x << std::endl;
             }
-            else if(iResult == 0)
-                printf("Connection closing.. \n");
-            else {
-                printf("recv failed with error: %d\n", WSAGetLastError());
+        // Echo the buffer back to the sender
+            std::vector<char> recvecBuffer = serializePacket(packets);
+            iSendResult = send( ClientSocket, recvecBuffer.data(), sizeof recvecBuffer, 0 );
+            if (iSendResult == SOCKET_ERROR) {
+                printf("send failed with error: %d\n", WSAGetLastError());
                 closesocket(ClientSocket);
                 WSACleanup();
-                exit(1);
+                return 1;
             }
-        } while(iResult > 0);
+            printf("Bytes sent: %d\n", iSendResult);
+        }
+        else if (iResult == 0)
+            printf("Connection closing...\n");
+        else  {
+            printf("recv failed with error: %d\n", WSAGetLastError());
+            closesocket(ClientSocket);
+            WSACleanup();
+            return 1;
+        }
 
-    if(shutdown(ClientSocket, SD_SEND)) {
+    } while (iResult > 0);
+
+    // shutdown the connection since we're done
+    iResult = shutdown(ClientSocket, SD_SEND);
+    if (iResult == SOCKET_ERROR) {
         printf("shutdown failed with error: %d\n", WSAGetLastError());
         closesocket(ClientSocket);
         WSACleanup();
-        exit(1);
+        return 1;
     }
 
+    // cleanup
     closesocket(ClientSocket);
     WSACleanup();
+    return 0;
 };
 
-void startClient(Packet& packets) {
-    Player* client = new Player(rand()%1000);
-    packets.players.push_back(client);
+int startClient() {
+    Packet playerpacket;
+    Player client(rand()%100);
+    client.radius = 50;
+    client.x = 50;
+    client.y = 50;
+    playerpacket.players.push_back(client);
+
+    char recvBuffer[1024];
+    
     WSADATA wsaData;
     SOCKET ConnectSocket = INVALID_SOCKET;
-
-    struct addrinfo  *result = NULL,
-                     *ptr   = NULL,
-                     hints;
-
-    if(WSAStartup(MAKEWORD(2,2), &wsaData) != 0) {
-        printf("WSAStartup failed with error: \n");
-        exit(1);
+    struct addrinfo *result = NULL,
+                    *ptr = NULL,
+                    hints;
+    const char *sendbuf = "this is a test";
+    char recvbuf[DEFAULT_BUFLEN];
+    int iResult;
+    int recvbuflen = DEFAULT_BUFLEN;
+    
+    // Initialize Winsock
+    iResult = WSAStartup(MAKEWORD(2,2), &wsaData);
+    if (iResult != 0) {
+        printf("WSAStartup failed with error: %d\n", iResult);
+        return 1;
     }
 
-    ZeroMemory(&hints, sizeof(hints));
-    hints.ai_family   = AF_INET;
+    ZeroMemory( &hints, sizeof(hints) );
+    hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_protocol = IPPROTO_TCP;
-    hints.ai_flags    = AI_PASSIVE;
 
-    if(getaddrinfo(IPADDRESS, DEFAULT_PORT, &hints, &result) != 0) {
-        printf("getaddrinfo failed with errror \n");
+    // Resolve the server address and port
+    iResult = getaddrinfo(IPADDRESS, DEFAULT_PORT, &hints, &result);
+    if ( iResult != 0 ) {
+        printf("getaddrinfo failed with error: %d\n", iResult);
         WSACleanup();
-        exit(1);
+        return 1;
     }
 
-    for(ptr=result; ptr!= NULL; ptr=ptr->ai_next) {
-        ConnectSocket = socket(ptr->ai_family, ptr->ai_socktype, ptr->ai_protocol);
-        if(ConnectSocket == INVALID_SOCKET) {
-            printf("Socket failed with error: %ld\n", WSAGetLastError());
+    // Attempt to connect to an address until one succeeds
+    for(ptr=result; ptr != NULL ;ptr=ptr->ai_next) {
+
+        // Create a SOCKET for connecting to server
+        ConnectSocket = socket(ptr->ai_family, ptr->ai_socktype, 
+            ptr->ai_protocol);
+        if (ConnectSocket == INVALID_SOCKET) {
+            printf("socket failed with error: %d\n", WSAGetLastError());
             WSACleanup();
-            exit(1);
+            return 1;
         }
 
-        //connnect to server
-        if(connect(ConnectSocket, ptr->ai_addr, (int)ptr->ai_addrlen)) {
+        // Connect to server.
+        iResult = connect( ConnectSocket, ptr->ai_addr, (int)ptr->ai_addrlen);
+        if (iResult == SOCKET_ERROR) {
             closesocket(ConnectSocket);
             ConnectSocket = INVALID_SOCKET;
             continue;
@@ -184,50 +274,89 @@ void startClient(Packet& packets) {
 
     freeaddrinfo(result);
 
-    if(ConnectSocket == INVALID_SOCKET) {
-        printf("unable to connect to server! \n");
-        startServer(packets);
+    if (ConnectSocket == INVALID_SOCKET) {
+        printf("Unable to connect to server!\n");
         WSACleanup();
-        exit(1);
+        return 1;
     }
 
-    if(send(ConnectSocket, (char*)&packets, sizeof packets, 0) == SOCKET_ERROR) {
+    // Send an initial buffer
+    std::vector<char> recvecBuffer = serializePacket(playerpacket);
+    iResult = send( ConnectSocket, recvecBuffer.data(), sizeof recvecBuffer, 0 );
+    if (iResult == SOCKET_ERROR) {
         printf("send failed with error: %d\n", WSAGetLastError());
         closesocket(ConnectSocket);
         WSACleanup();
-        exit(1);
+        return 1;
     }
 
-    int iResult;
-    do {
-        iResult = recv(ConnectSocket, (char*)&packets, sizeof packets, 0);
-        if(iResult >0) {
-            for(size_t i = 0; i<packets.players.size(); i++) {
-                std::cout << packets.players[i] << std::endl;
-            }
-        } 
-        else if (iResult == 0)
-            printf("Connection closed\n");
-        else    
-            printf("recv failed with error: %d\n", WSAGetLastError());
-    } while(iResult >0);
+    printf("Bytes Sent: %d\n", iResult);
 
+    // shutdown the connection since no more data will be sent
+    iResult = shutdown(ConnectSocket, SD_SEND);
+    if (iResult == SOCKET_ERROR) {
+        printf("shutdown failed with error: %d\n", WSAGetLastError());
+        closesocket(ConnectSocket);
+        WSACleanup();
+        return 1;
+    }
+
+    // Receive until the peer closes the connection
+    Packet playerpackets;
+    do {
+        std::cout << "here" << std::endl;
+        iResult = recv(ConnectSocket, recvBuffer, sizeof(recvBuffer), 0);
+        if ( iResult > 0 ) {
+            std::cout << "helloo " << std::endl;
+            printf("Bytes received: %d\n", iResult);
+            playerpackets = deserializePacket(recvBuffer, iResult);
+            for(size_t i = 0; i < playerpackets.players.size(); i++) {
+                std::cout << playerpackets.players[i].id << " id\n";
+            }
+        }
+       else if ( iResult == 0 )
+            printf("Connection closed\n");
+        else
+            printf("recv failed with error: %d\n", WSAGetLastError());
+
+    } while( iResult > 0 );
+
+    // cleanup
     closesocket(ConnectSocket);
     WSACleanup();
+    return 0;
 };
 
 
 
 int main() {
 
+    const int screenWidth  = 800;
+    const int screenHeight = 450;
+
+    InitWindow(screenWidth, screenHeight, "Pong Test");
+    SetTargetFPS(30);
+
+    while(!WindowShouldClose()) {
+        BeginDrawing();
+        ClearBackground(RAYWHITE);
+        DrawText("Window", 400,200, 200, RED);
+        EndDrawing();
+
+    }
+
     int playerid = rand()%1000;
     Player playerp(playerid);
     Packet myPacket;
-    myPacket.players.push_back(&playerp); 
+    myPacket.players.push_back(playerp); 
+    std::cout << "Hello" << std::endl;
 
-
-    startClient(myPacket);
-    //startServer(myPacket);
-
+    std::string serverorclient;
+    std::cin >> serverorclient; 
+    if(serverorclient == "Server") {
+        startServer(myPacket);
+    }
+    else 
+        startClient();
     return 1;
 };
