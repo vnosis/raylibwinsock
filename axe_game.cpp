@@ -37,6 +37,12 @@ struct Player{
     Player(int pid):id(pid){};
 };
 
+struct Ball {
+    Vector2 ballPosition;
+    Vector2 ballSpeed;
+    int ballRadius;
+};
+
 typedef struct{
     std::vector<Player> players;
 } Packet;
@@ -82,6 +88,7 @@ int startServer(Packet& packets) {
     client.x      = 50;
     client.y      = 50;
     client.radius = 50;*/
+    std::cout <<"Starting Server" << std::endl;
     WSADATA wsaData;
     int iResult;
 
@@ -94,8 +101,6 @@ int startServer(Packet& packets) {
     struct addrinfo hints;
 
     int iSendResult;
-    char recvbuf[DEFAULT_BUFLEN];
-    int recvbuflen = DEFAULT_BUFLEN;
     
     // Initialize Winsock
     iResult = WSAStartup(MAKEWORD(2,2), &wsaData);
@@ -225,10 +230,7 @@ int startClient() {
     struct addrinfo *result = NULL,
                     *ptr = NULL,
                     hints;
-    const char *sendbuf = "this is a test";
-    char recvbuf[DEFAULT_BUFLEN];
     int iResult;
-    int recvbuflen = DEFAULT_BUFLEN;
     
     // Initialize Winsock
     iResult = WSAStartup(MAKEWORD(2,2), &wsaData);
@@ -327,29 +329,89 @@ int startClient() {
     return 0;
 };
 
+//Create Menu Window
+void Menu() {
+    DrawRectangle(GetScreenWidth()/2.0f, GetScreenHeight()/2.0f, 60,20, BLUE);
+    DrawRectangle(GetScreenWidth()/5.0f, GetScreenHeight()/2.0f, 60,20, RED);
+    DrawText("Server", GetScreenWidth()/2.0f, GetScreenHeight()/2.0f, 20, RED);
+    DrawText("Client", GetScreenWidth()/5.0f, GetScreenHeight()/2.0f, 20, BLUE);
+};
+
+//TODO 
+//Close window function and close connection
+
+// Pong movement
+void Pong_Ball(Vector2& ballPosition, Vector2& ballSpeed, int& ballRadius) {
+    ballPosition.x += ballSpeed.x;
+    ballPosition.y += ballSpeed.y;
+
+    if ((ballPosition.x >= (GetScreenWidth() - ballRadius)) || (ballPosition.x <= ballRadius))
+        ballSpeed.x *= -1.0f;
+    if ((ballPosition.y >= (GetScreenHeight() - ballRadius)) || (ballPosition.y <= ballRadius))
+        ballSpeed.y *= -1.0f;
+};
 
 
 int main() {
-
-    const int screenWidth  = 800;
-    const int screenHeight = 450;
-
-    InitWindow(screenWidth, screenHeight, "Pong Test");
-    SetTargetFPS(30);
-
-    while(!WindowShouldClose()) {
-        BeginDrawing();
-        ClearBackground(RAYWHITE);
-        DrawText("Window", 400,200, 200, RED);
-        EndDrawing();
-
-    }
-
     int playerid = rand()%1000;
     Player playerp(playerid);
     Packet myPacket;
     myPacket.players.push_back(playerp); 
     std::cout << "Hello" << std::endl;
+
+
+    const int screenWidth  = 800;
+    const int screenHeight = 450;
+
+    SetConfigFlags(FLAG_MSAA_4X_HINT);
+    InitWindow(screenWidth, screenHeight, "Pong Test");
+    Vector2 ballPosition = {GetScreenWidth()/2.0f, GetScreenHeight()/2.0f};
+    Vector2 ballSpeed    = { 5.0f, 4.0f };
+    int ballRadius       = 20;
+
+
+    //Mouse
+    Vector2 mousePoint = {0.0f, 0.0f};
+
+    //button
+    Rectangle btnBoundServer = {GetScreenWidth()/2.0f, GetScreenHeight()/2.0f, 60,20};
+    Rectangle btnBoundClient = {GetScreenWidth()/5.0f, GetScreenHeight()/2.0f, 60,20};
+
+    
+    SetTargetFPS(60);
+
+    while(!WindowShouldClose()) {
+        mousePoint = GetMousePosition();
+
+        if(CheckCollisionPointRec(mousePoint, btnBoundServer)){
+            if(IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+                BeginDrawing();
+                ClearBackground(RAYWHITE);
+                DrawText("WAITING FOR CLIENT",GetScreenWidth()/2.0f, GetScreenHeight()/2.0f,30,RED);
+                EndDrawing();
+                startServer(myPacket);
+            }
+        } 
+
+        if(CheckCollisionPointRec(mousePoint, btnBoundClient)){
+            if(IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+                BeginDrawing();
+                ClearBackground(RAYWHITE);
+                DrawText("CONNECTING TO SERVER",GetScreenWidth()/2.0f, GetScreenHeight()/2.0f,30,RED);
+                EndDrawing();
+                startServer(myPacket);
+            }
+        }
+
+
+        BeginDrawing();
+        Menu();
+        DrawFPS(10,10);
+        ClearBackground(RAYWHITE);
+        Pong_Ball(ballPosition, ballSpeed, ballRadius);
+        DrawCircleV(ballPosition, (float)ballRadius, MAROON);
+        EndDrawing();
+    }
 
     std::string serverorclient;
     std::cin >> serverorclient; 
