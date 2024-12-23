@@ -20,6 +20,7 @@
 #include <string.h>
 #include <algorithm>
 #include <cstring>
+#include <thread>
 
 // Need to link with Ws2_32.lib, Mswsock.lib, and Advapi32.lib
 #pragma comment (lib, "Ws2_32.lib")
@@ -28,6 +29,7 @@
 
 #define DEFAULT_PORT "8080"
 #define IPADDRESS "192.168.1.222"
+#define DEFAULT_BUFLEN 512
 
 struct Player{
     int id;
@@ -43,10 +45,14 @@ struct Ball {
     int ballRadius;
 };
 
+enum Connection {
+   Success = 0,
+   Error, 
+};
+
 typedef struct{
     std::vector<Player> players;
 } Packet;
-#define DEFAULT_BUFLEN 512
 
 std::vector<char> serializePacket(const Packet& packet) {
     std::vector<char> buffer;
@@ -82,7 +88,8 @@ Packet deserializePacket(const char* data, size_t dataSize) {
 
 
 
-int startServer(Packet& packets) {
+void startServer() {
+    try{
     /*Player client(rand()%1000);
     packets.players.push_back(client);
     client.x      = 50;
@@ -106,7 +113,7 @@ int startServer(Packet& packets) {
     iResult = WSAStartup(MAKEWORD(2,2), &wsaData);
     if (iResult != 0) {
         printf("WSAStartup failed with error: %d\n", iResult);
-        return 1;
+        return;
     }
 
     ZeroMemory(&hints, sizeof(hints));
@@ -120,7 +127,7 @@ int startServer(Packet& packets) {
     if ( iResult != 0 ) {
         printf("getaddrinfo failed with error: %d\n", iResult);
         WSACleanup();
-        return 1;
+        return;
     }
 
     // Create a SOCKET for the server to listen for client connections.
@@ -129,7 +136,7 @@ int startServer(Packet& packets) {
         printf("socket failed with error: %d\n", WSAGetLastError());
         freeaddrinfo(result);
         WSACleanup();
-        return 1;
+        return;
     }
 
     // Setup the TCP listening socket
@@ -139,7 +146,7 @@ int startServer(Packet& packets) {
         freeaddrinfo(result);
         closesocket(ListenSocket);
         WSACleanup();
-        return 1;
+        return;
     }
 
     freeaddrinfo(result);
@@ -149,22 +156,25 @@ int startServer(Packet& packets) {
         printf("listen failed with error: %d\n", WSAGetLastError());
         closesocket(ListenSocket);
         WSACleanup();
-        return 1;
+        return;
     }
 
     // Accept a client socket
+    std::cout << "ABout to Accept\n";
     ClientSocket = accept(ListenSocket, NULL, NULL);
+    std::cout << "Accepting Client... \n";
     if (ClientSocket == INVALID_SOCKET) {
         printf("accept failed with error: %d\n", WSAGetLastError());
         closesocket(ListenSocket);
         WSACleanup();
-        return 1;
+        return;
     }
 
     // No longer need server socket
     closesocket(ListenSocket);
 
     // Receive until the peer shuts down the connection
+    /*
     do {
 
         iResult = recv(ClientSocket, recvBuffer, sizeof recvBuffer, 0);
@@ -199,6 +209,7 @@ int startServer(Packet& packets) {
         }
 
     } while (iResult > 0);
+    */
 
     // shutdown the connection since we're done
     iResult = shutdown(ClientSocket, SD_SEND);
@@ -206,13 +217,16 @@ int startServer(Packet& packets) {
         printf("shutdown failed with error: %d\n", WSAGetLastError());
         closesocket(ClientSocket);
         WSACleanup();
-        return 1;
+        return;
     }
 
     // cleanup
     closesocket(ClientSocket);
     WSACleanup();
-    return 0;
+    } catch(const std::exception& e) {
+        std::cerr << "ServerThread Exception: " << e.what() << "\n";
+    }
+
 };
 
 int startClient() {
@@ -295,16 +309,20 @@ int startClient() {
     printf("Bytes Sent: %d\n", iResult);
 
     // shutdown the connection since no more data will be sent
-    iResult = shutdown(ConnectSocket, SD_SEND);
-    if (iResult == SOCKET_ERROR) {
+    /*
+     iResult = shutdown(ConnectSocket, SD_SEND);
+     if (iResult == SOCKET_ERROR) {
         printf("shutdown failed with error: %d\n", WSAGetLastError());
         closesocket(ConnectSocket);
         WSACleanup();
         return 1;
-    }
+     }
+    */
+   
 
     // Receive until the peer closes the connection
     Packet playerpackets;
+    /*
     do {
         std::cout << "here" << std::endl;
         iResult = recv(ConnectSocket, recvBuffer, sizeof(recvBuffer), 0);
@@ -322,6 +340,8 @@ int startClient() {
             printf("recv failed with error: %d\n", WSAGetLastError());
 
     } while( iResult > 0 );
+    */
+    
 
     // cleanup
     closesocket(ConnectSocket);
@@ -351,14 +371,28 @@ void Pong_Ball(Vector2& ballPosition, Vector2& ballSpeed, int& ballRadius) {
         ballSpeed.y *= -1.0f;
 };
 
+struct ServerThread {
+    static std::thread startServerThread;
+    void start(){
+        std::cout << "Thread" << std::endl;
+        std::thread startServerThread(startServer);
+        std::cout << "Thread END" << std::endl;
+    }
+    void finish(){
+        std::cout << "Finish" << std::endl;
+        startServerThread.join();
+        std::cout << "Finished" << std::endl;
+    }
+    
+};
+
 
 int main() {
+    ServerThread ST;
     int playerid = rand()%1000;
     Player playerp(playerid);
     Packet myPacket;
     myPacket.players.push_back(playerp); 
-    std::cout << "Hello" << std::endl;
-
 
     const int screenWidth  = 800;
     const int screenHeight = 450;
@@ -376,20 +410,30 @@ int main() {
     //button
     Rectangle btnBoundServer = {GetScreenWidth()/2.0f, GetScreenHeight()/2.0f, 60,20};
     Rectangle btnBoundClient = {GetScreenWidth()/5.0f, GetScreenHeight()/2.0f, 60,20};
-
     
     SetTargetFPS(60);
 
-    while(!WindowShouldClose()) {
-        mousePoint = GetMousePosition();
+    //Menu 
+    bool menuWindow       = true;
+    bool lookingForServer = false;
+    bool waitingForClient = false;
+    std::thread serverThread;
 
+    while(menuWindow) {
+        mousePoint = GetMousePosition();
+        
+        //Menu
         if(CheckCollisionPointRec(mousePoint, btnBoundServer)){
             if(IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
                 BeginDrawing();
                 ClearBackground(RAYWHITE);
                 DrawText("WAITING FOR CLIENT",GetScreenWidth()/2.0f, GetScreenHeight()/2.0f,30,RED);
                 EndDrawing();
-                startServer(myPacket);
+                try {
+                    serverThread = std::thread(startServer);
+                } catch(const std::exception& e) {
+                    std::cerr << "Failed to start server thread: " << e.what() << "\n";
+                }
             }
         } 
 
@@ -397,13 +441,18 @@ int main() {
             if(IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
                 BeginDrawing();
                 ClearBackground(RAYWHITE);
-                DrawText("CONNECTING TO SERVER",GetScreenWidth()/2.0f, GetScreenHeight()/2.0f,30,RED);
+                DrawText("LOOKING FOR A SERVER",GetScreenWidth()/2.0f, GetScreenHeight()/2.0f,30,RED);
                 EndDrawing();
-                startServer(myPacket);
+                startClient();
             }
         }
-
-
+        /*
+        if(waitingForClient){
+            ST.start();
+            waitingForClient = false;
+        }
+        */
+        
         BeginDrawing();
         Menu();
         DrawFPS(10,10);
@@ -411,14 +460,12 @@ int main() {
         Pong_Ball(ballPosition, ballSpeed, ballRadius);
         DrawCircleV(ballPosition, (float)ballRadius, MAROON);
         EndDrawing();
+        std::cout << menuWindow << std::endl; 
     }
 
-    std::string serverorclient;
-    std::cin >> serverorclient; 
-    if(serverorclient == "Server") {
-        startServer(myPacket);
+    if(serverThread.joinable()) {
+        serverThread.join();
     }
-    else 
-        startClient();
-    return 1;
+    return 0;
+      
 };
