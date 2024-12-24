@@ -1,18 +1,40 @@
-#define WIN32_LEAN_AND_MEAN
+#define PLATFORM_WINDOWS 1
+#define PLATFORM_MAC     2
+#define PLATFORM_UNIX    3
+
+
+//To make raylib work with winsock
 #if defined(_WIN32)
+    #define PLATFORM PLATFORM_WINDOWS
+    #define WIN32_LEAN_AND_MEAN
     #define NOGDI
     #define NOUSER
-#endif
-
-#include <winsock2.h>
-#include <Windows.h>
-#include <ws2tcpip.h>
-#include <stdlib.h>
-#include <stdio.h>
-#if defined(_WIN32)
     #undef near
     #undef far
+#elif defined(__APPLE__)
+    #define PLATFORM PLATFORM_MAC
+#else 
+    #define PLATFORM PLATFORM_UNIX
 #endif
+
+#if PLATFORM == PLATFORM_WINDOWS
+    #include <Windows.h>
+    #include <ws2tcpip.h>
+
+    // Need to link with Ws2_32.lib, Mswsock.lib, and Advapi32.lib
+    #pragma comment (lib, "Ws2_32.lib")
+    #pragma comment (lib, "Mswsock.lib")
+    #pragma comment (lib, "AdvApi32.lib")
+
+#elif PLATFORM == PLATFORM_MAC || 
+      PLATOFRM == PLATFORM_UNIX
+      #include <sys/socket.h>
+      #include <netinet/in.h>
+      #include <fcntl.h>
+#endif
+
+#include <stdlib.h>
+#include <stdio.h>
 #include "raylib.h"
 #include <iostream>
 #include <cstdio>
@@ -21,11 +43,6 @@
 #include <algorithm>
 #include <cstring>
 #include <thread>
-
-// Need to link with Ws2_32.lib, Mswsock.lib, and Advapi32.lib
-#pragma comment (lib, "Ws2_32.lib")
-#pragma comment (lib, "Mswsock.lib")
-#pragma comment (lib, "AdvApi32.lib")
 
 #define DEFAULT_PORT "8080"
 #define IPADDRESS "192.168.1.222"
@@ -86,15 +103,158 @@ Packet deserializePacket(const char* data, size_t dataSize) {
     return packet;
 };
 
+namespace NETWORK{
+    class NConnection {
+        private:
+            Packet m_packet;
+            char recvBuffer[1024];
+            int iResult = 0;
+            WSADATA wsaData;
+            struct addrinfo *result = NULL;
+            struct addrinfo hints;
+            SOCKET SListenSocket =  INVALID_SOCKET;
+            SOCKET ClientSocket =  INVALID_SOCKET; 
+        public:
+            NConnection();
+            void ShutDownSock();
+            bool SetListenSock();
+            bool ListenSocket();
+            bool BindSocket();
+            bool AcceptClient();
+            void Receive();
+            bool Send();
+            void AddressInfo();
+            bool GetAddressInfo();
 
+    };
+
+    class Address{
+        private:
+            int iResult = 0;
+            struct addrinfo *m_result = NULL;
+            struct addrinfo m_hints;
+
+        public:
+            Address();
+            bool GetAddressInfo();
+    };
+};
+
+void NETWORK::NConnection::AddressInfo() {
+            this->hints.ai_family = AF_INET;
+            this->hints.ai_socktype = SOCK_STREAM;
+            this->hints.ai_protocol = IPPROTO_TCP;
+            this->hints.ai_flags = AI_PASSIVE;
+};
+
+bool NETWORK::NConnection::GetAddressInfo() {
+    // Resolve the server address and port
+    iResult = getaddrinfo(NULL, DEFAULT_PORT, &this->hints, &this->result);
+    if ( iResult != 0 ) {
+        printf("getaddrinfo failed with error: %d\n", iResult);
+        WSACleanup();
+        return false;
+    }
+    return true;
+};
+
+bool NETWORK::NConnection::AcceptClient() {
+    ClientSocket = accept(this->SListenSocket, NULL, NULL);
+    if (ClientSocket == INVALID_SOCKET) {
+        printf("accept failed with error: %d\n", WSAGetLastError());
+        closesocket(this->SListenSocket);
+        WSACleanup();
+        return false; 
+    }
+    return true;
+};
+
+void NETWORK::NConnection::Receive() {
+    iResult = recv(ClientSocket, recvBuffer, sizeof recvBuffer, 0);
+    if (iResult > 0) {
+        printf("Bytes received: %d\n", iResult);
+
+        m_packet = deserializePacket(recvBuffer,iResult);
+
+        for(size_t i = 0; i < m_packet.players.size(); ++i) {
+            std::cout << m_packet.players[i].id << std::endl;
+            std::cout << m_packet.players[i].y << std::endl;
+            std::cout << m_packet.players[i].x << std::endl;
+        }
+    }
+};
+
+bool NETWORK::NConnection::Send() {
+    std::vector<char> recvecBuffer = serializePacket(this->m_packet);
+    this->iResult = send( ClientSocket, recvecBuffer.data(), sizeof recvecBuffer, 0 );
+    if (this->iResult == SOCKET_ERROR) {
+        printf("send failed with error: %d\n", WSAGetLastError());
+        closesocket(ClientSocket);
+        WSACleanup();
+        return false;
+    }
+    return true;
+};
+
+bool NETWORK::NConnection::SetListenSock() {
+    this->SListenSocket = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
+    if (SListenSocket == INVALID_SOCKET) {
+        printf("socket failed with error: %d\n", WSAGetLastError());
+        freeaddrinfo(result);
+        WSACleanup();
+        return false;
+    }
+    return true;
+};
+
+bool NETWORK::NConnection::ListenSocket() {
+        this->iResult = listen(this->SListenSocket, SOMAXCONN);
+        if (iResult == SOCKET_ERROR) {
+            printf("listen failed with error: %d\n", WSAGetLastError());
+            closesocket(this->SListenSocket);
+            WSACleanup();
+            return false;
+        }
+        return true;
+};
+
+bool NETWORK::NConnection::BindSocket() {
+    iResult = bind( this->SListenSocket, result->ai_addr, (int)result->ai_addrlen);
+    if (iResult == SOCKET_ERROR) {
+        printf("bind failed with error: %d\n", WSAGetLastError());
+        freeaddrinfo(result);
+        closesocket(this->SListenSocket);
+        WSACleanup();
+        return false;
+    }
+    return true;
+}
+
+NETWORK::NConnection::NConnection() {
+    #if PLATFORM == PLATFORM_WINDOWS
+        iResult = WSAStartup(MAKEWORD(2,2), &this->wsaData);
+        if (iResult != 0) {
+            printf("WSAStartup failed with error: %d\n", iResult);
+        }
+    #endif
+};
+
+void NETWORK::NConnection::ShutDownSock() {
+    #if PLATFORM == PLATFORM_WINDOWS
+        iResult = shutdown(ClientSocket, SD_SEND);
+        if (iResult == SOCKET_ERROR) {
+            printf("shutdown failed with error: %d\n", WSAGetLastError());
+            closesocket(ClientSocket);
+            WSACleanup();
+            return;
+        }
+        WSACleanup();
+    #endif
+};
 
 void startServer() {
     try{
-    /*Player client(rand()%1000);
-    packets.players.push_back(client);
-    client.x      = 50;
-    client.y      = 50;
-    client.radius = 50;*/
+
     std::cout <<"Starting Server" << std::endl;
     WSADATA wsaData;
     int iResult;
@@ -419,6 +579,11 @@ int main() {
     bool waitingForClient = false;
     std::thread serverThread;
 
+    NETWORK::NConnection Server;
+    Server.AddressInfo();
+    NETWORK::NConnection Client;
+    Client.AddressInfo();
+
     while(menuWindow) {
         mousePoint = GetMousePosition();
         
@@ -429,11 +594,16 @@ int main() {
                 ClearBackground(RAYWHITE);
                 DrawText("WAITING FOR CLIENT",GetScreenWidth()/2.0f, GetScreenHeight()/2.0f,30,RED);
                 EndDrawing();
-                try {
+                Server.GetAddressInfo();
+                Server.SetListenSock();
+                Server.BindSocket();
+                Server.ListenSocket();
+                Server.AcceptClient();
+                /*try {
                     serverThread = std::thread(startServer);
                 } catch(const std::exception& e) {
                     std::cerr << "Failed to start server thread: " << e.what() << "\n";
-                }
+                }*/ 
             }
         } 
 
@@ -446,12 +616,6 @@ int main() {
                 startClient();
             }
         }
-        /*
-        if(waitingForClient){
-            ST.start();
-            waitingForClient = false;
-        }
-        */
         
         BeginDrawing();
         Menu();
