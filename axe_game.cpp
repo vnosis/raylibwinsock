@@ -71,7 +71,51 @@ typedef struct{
     std::vector<Player> players;
 } Packet;
 
-std::vector<char> serializePacket(const Packet& packet) {
+namespace NETWORK{
+    class NConnection {
+        private:
+            Packet m_packet;
+            char recvBuffer[1024];
+            int iResult = 0;
+            WSADATA wsaData;
+            struct addrinfo *result = NULL, *ptr = NULL;
+            struct addrinfo hints;
+            SOCKET SListenSocket =  INVALID_SOCKET;
+            SOCKET ClientSocket  =  INVALID_SOCKET; 
+            SOCKET ConnectSocket =  INVALID_SOCKET; 
+        public:
+            NConnection();
+            void ShutDownSock();
+            bool SetSock();
+            bool ListenSock();
+            bool BindSock();
+            int ConnectSock();
+            bool AcceptClient();
+            void Receive();
+            bool Send();
+            void AddressInfo();
+            bool GetAddressInfo();
+            bool SockConnect();
+
+            Packet deserializePacket(const char*,size_t);
+            std::vector<char> serializePacket(const Packet&);
+
+
+    };
+
+    class Address{
+        private:
+            int iResult = 0;
+            struct addrinfo *m_result = NULL;
+            struct addrinfo m_hints;
+
+        public:
+            Address();
+            bool GetAddressInfo();
+    };
+};
+
+std::vector<char> NETWORK::NConnection::serializePacket(const Packet& packet) {
     std::vector<char> buffer;
 
     size_t numPlayers = packet.players.size();
@@ -84,7 +128,7 @@ std::vector<char> serializePacket(const Packet& packet) {
     return buffer;
 };
 
-Packet deserializePacket(const char* data, size_t dataSize) {
+Packet NETWORK::NConnection::deserializePacket(const char* data, size_t dataSize) {
     Packet packet;
     size_t offset = 0;
     size_t numPlayers = 0;
@@ -103,48 +147,12 @@ Packet deserializePacket(const char* data, size_t dataSize) {
     return packet;
 };
 
-namespace NETWORK{
-    class NConnection {
-        private:
-            Packet m_packet;
-            char recvBuffer[1024];
-            int iResult = 0;
-            WSADATA wsaData;
-            struct addrinfo *result = NULL;
-            struct addrinfo hints;
-            SOCKET SListenSocket =  INVALID_SOCKET;
-            SOCKET ClientSocket =  INVALID_SOCKET; 
-        public:
-            NConnection();
-            void ShutDownSock();
-            bool SetListenSock();
-            bool ListenSocket();
-            bool BindSocket();
-            bool AcceptClient();
-            void Receive();
-            bool Send();
-            void AddressInfo();
-            bool GetAddressInfo();
-
-    };
-
-    class Address{
-        private:
-            int iResult = 0;
-            struct addrinfo *m_result = NULL;
-            struct addrinfo m_hints;
-
-        public:
-            Address();
-            bool GetAddressInfo();
-    };
-};
 
 void NETWORK::NConnection::AddressInfo() {
-            this->hints.ai_family = AF_INET;
-            this->hints.ai_socktype = SOCK_STREAM;
-            this->hints.ai_protocol = IPPROTO_TCP;
-            this->hints.ai_flags = AI_PASSIVE;
+    ZeroMemory( &this->hints, sizeof(this->hints) );
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
 };
 
 bool NETWORK::NConnection::GetAddressInfo() {
@@ -196,7 +204,26 @@ bool NETWORK::NConnection::Send() {
     return true;
 };
 
-bool NETWORK::NConnection::SetListenSock() {
+bool NETWORK::NConnection::SockConnect() {
+    for(this->ptr = this->result; this->ptr != NULL; this->ptr=this->ptr->ai_next) {
+        this->ConnectSocket = socket(this->ptr->ai_family, this->ptr->ai_socktype, this->ptr->ai_protocol);
+        if(ConnectSocket == INVALID_SOCKET) {
+            printf("socket failed with error: %d\n", WSAGetLastError());
+            WSACleanup();
+            return false; 
+        }
+
+        this->iResult = connect(this->ConnectSocket, this->ptr->ai_addr, (int)this->ptr->ai_addrlen);
+        if (this->iResult == SOCKET_ERROR) {
+            closesocket(this->ConnectSocket);
+            ConnectSocket = INVALID_SOCKET;
+            continue;
+        }
+    }
+    return true;
+};
+
+bool NETWORK::NConnection::SetSock() {
     this->SListenSocket = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
     if (SListenSocket == INVALID_SOCKET) {
         printf("socket failed with error: %d\n", WSAGetLastError());
@@ -207,7 +234,7 @@ bool NETWORK::NConnection::SetListenSock() {
     return true;
 };
 
-bool NETWORK::NConnection::ListenSocket() {
+bool NETWORK::NConnection::ListenSock() {
         this->iResult = listen(this->SListenSocket, SOMAXCONN);
         if (iResult == SOCKET_ERROR) {
             printf("listen failed with error: %d\n", WSAGetLastError());
@@ -218,7 +245,7 @@ bool NETWORK::NConnection::ListenSocket() {
         return true;
 };
 
-bool NETWORK::NConnection::BindSocket() {
+bool NETWORK::NConnection::BindSock() {
     iResult = bind( this->SListenSocket, result->ai_addr, (int)result->ai_addrlen);
     if (iResult == SOCKET_ERROR) {
         printf("bind failed with error: %d\n", WSAGetLastError());
@@ -457,7 +484,8 @@ int startClient() {
     }
 
     // Send an initial buffer
-    std::vector<char> recvecBuffer = serializePacket(playerpacket);
+    NETWORK::NConnection networkIns;
+    std::vector<char> recvecBuffer = networkIns.serializePacket(playerpacket);
     iResult = send( ConnectSocket, recvecBuffer.data(), sizeof recvecBuffer, 0 );
     if (iResult == SOCKET_ERROR) {
         printf("send failed with error: %d\n", WSAGetLastError());
@@ -584,6 +612,8 @@ int main() {
     NETWORK::NConnection Client;
     Client.AddressInfo();
 
+    struct addrinfo* ptr = NULL;
+
     while(menuWindow) {
         mousePoint = GetMousePosition();
         
@@ -595,10 +625,10 @@ int main() {
                 DrawText("WAITING FOR CLIENT",GetScreenWidth()/2.0f, GetScreenHeight()/2.0f,30,RED);
                 EndDrawing();
                 Server.GetAddressInfo();
-                Server.SetListenSock();
-                Server.BindSocket();
-                Server.ListenSocket();
-                Server.AcceptClient();
+                Server.SetSock();
+                Server.BindSock();
+                Server.ListenSock();
+                if(Server.AcceptClient()) menuWindow = false;
                 /*try {
                     serverThread = std::thread(startServer);
                 } catch(const std::exception& e) {
@@ -613,7 +643,8 @@ int main() {
                 ClearBackground(RAYWHITE);
                 DrawText("LOOKING FOR A SERVER",GetScreenWidth()/2.0f, GetScreenHeight()/2.0f,30,RED);
                 EndDrawing();
-                startClient();
+                Client.GetAddressInfo();
+                Client.SockConnect();
             }
         }
         
@@ -626,6 +657,18 @@ int main() {
         EndDrawing();
         std::cout << menuWindow << std::endl; 
     }
+
+    menuWindow = true;
+    while(menuWindow) {
+        BeginDrawing();
+        Menu();
+        DrawFPS(10,10);
+        ClearBackground(RAYWHITE);
+        Pong_Ball(ballPosition, ballSpeed, ballRadius);
+        DrawCircleV(ballPosition, (float)ballRadius, MAROON);
+        EndDrawing();
+    }
+
 
     if(serverThread.joinable()) {
         serverThread.join();
