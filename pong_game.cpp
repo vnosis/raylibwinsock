@@ -48,18 +48,19 @@
 #define IPADDRESS "192.168.1.222"
 #define DEFAULT_BUFLEN 512
 
+struct Ball {
+    Vector2 ballPosition;
+    Vector2 ballSpeed;
+    int ballRadius;
+};
+
 struct Player{
     int id;
     int x;
     int y;
     int radius;
     Player(int pid):id(pid){};
-};
-
-struct Ball {
-    Vector2 ballPosition;
-    Vector2 ballSpeed;
-    int ballRadius;
+    Ball balls;
 };
 
 enum Connection {
@@ -91,7 +92,7 @@ namespace NETWORK{
             bool BindSock();
             int ConnectSock();
             bool AcceptClient();
-            void Receive();
+            Packet Receive();
             bool Send();
             void AddressInfo();
             bool GetAddressInfo();
@@ -177,19 +178,14 @@ bool NETWORK::NConnection::AcceptClient() {
     return true;
 };
 
-void NETWORK::NConnection::Receive() {
+Packet NETWORK::NConnection::Receive() {
     iResult = recv(ClientSocket, recvBuffer, sizeof recvBuffer, 0);
     if (iResult > 0) {
         printf("Bytes received: %d\n", iResult);
 
         m_packet = deserializePacket(recvBuffer,iResult);
-
-        for(size_t i = 0; i < m_packet.players.size(); ++i) {
-            std::cout << m_packet.players[i].id << std::endl;
-            std::cout << m_packet.players[i].y << std::endl;
-            std::cout << m_packet.players[i].x << std::endl;
-        }
     }
+    return this->m_packet;
 };
 
 bool NETWORK::NConnection::Send() {
@@ -605,6 +601,7 @@ int main() {
     bool menuWindow       = true;
     bool lookingForServer = false;
     bool waitingForClient = false;
+    bool clientWindow = false, serverWindow = false;
     std::thread serverThread;
 
     NETWORK::NConnection Server;
@@ -620,6 +617,7 @@ int main() {
         //Menu
         if(CheckCollisionPointRec(mousePoint, btnBoundServer)){
             if(IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+                serverWindow = true;
                 BeginDrawing();
                 ClearBackground(RAYWHITE);
                 DrawText("WAITING FOR CLIENT",GetScreenWidth()/2.0f, GetScreenHeight()/2.0f,30,RED);
@@ -639,6 +637,7 @@ int main() {
 
         if(CheckCollisionPointRec(mousePoint, btnBoundClient)){
             if(IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+                clientWindow = true;
                 BeginDrawing();
                 ClearBackground(RAYWHITE);
                 DrawText("LOOKING FOR A SERVER",GetScreenWidth()/2.0f, GetScreenHeight()/2.0f,30,RED);
@@ -647,7 +646,7 @@ int main() {
                 Client.SockConnect();
             }
         }
-        
+
         BeginDrawing();
         Menu();
         DrawFPS(10,10);
@@ -655,16 +654,36 @@ int main() {
         Pong_Ball(ballPosition, ballSpeed, ballRadius);
         DrawCircleV(ballPosition, (float)ballRadius, MAROON);
         EndDrawing();
-        std::cout << menuWindow << std::endl; 
     }
 
-    menuWindow = true;
-    while(menuWindow) {
+    if(serverWindow) {
+        Packet packets;
+        BeginDrawing();
+        DrawFPS(10,10);
+        ClearBackground(RAYWHITE);
+        Pong_Ball(ballPosition, ballSpeed, ballRadius);
+        packets = Server.Receive();
+        for(size_t i = 0; i < packets.players.size(); ++i) {
+            DrawCircleV(packets.players[i].balls.ballPosition,
+                        packets.players[i].balls.ballSpeed, packets.players[i].balls.ballRadius);
+        }
+        Client.Send();
+    }
+    else if(clientWindow) {
+        BeginDrawing();
+        DrawFPS(10,10);
+        ClearBackground(RAYWHITE);
+        Pong_Ball(ballPosition, ballSpeed, ballRadius);
+        Client.Send();
+        Client.Receive();
+    }
+    else {
         BeginDrawing();
         Menu();
         DrawFPS(10,10);
         ClearBackground(RAYWHITE);
         Pong_Ball(ballPosition, ballSpeed, ballRadius);
+        
         DrawCircleV(ballPosition, (float)ballRadius, MAROON);
         EndDrawing();
     }
