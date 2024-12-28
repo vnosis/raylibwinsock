@@ -608,6 +608,7 @@ int main() {
     Server.AddressInfo();
     NETWORK::NConnection Client;
     Client.AddressInfo();
+    Packet packets;
 
     struct addrinfo* ptr = NULL;
 
@@ -657,7 +658,6 @@ int main() {
     }
 
     if(serverWindow) {
-        Packet packets;
         BeginDrawing();
         DrawFPS(10,10);
         ClearBackground(RAYWHITE);
@@ -665,7 +665,8 @@ int main() {
         packets = Server.Receive();
         for(size_t i = 0; i < packets.players.size(); ++i) {
             DrawCircleV(packets.players[i].balls.ballPosition,
-                        packets.players[i].balls.ballSpeed, packets.players[i].balls.ballRadius);
+                        (float)packets.players[i].balls.ballRadius, 
+                        MAROON);
         }
         Client.Send();
     }
@@ -674,6 +675,12 @@ int main() {
         DrawFPS(10,10);
         ClearBackground(RAYWHITE);
         Pong_Ball(ballPosition, ballSpeed, ballRadius);
+        packets = Client.Receive();
+        for(size_t i = 0; i< packets.players.size(); ++i) {
+            DrawCircleV(packets.players[i].balls.ballPosition,
+            (float)packets.players[i].balls.ballRadius,
+            MAROON);
+        }
         Client.Send();
         Client.Receive();
     }
