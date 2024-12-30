@@ -45,7 +45,7 @@
 #include <thread>
 
 #define DEFAULT_PORT "8080"
-#define IPADDRESS "127.0.0.1"
+#define IPADDRESS "192.168.1.222"
 #define DEFAULT_BUFLEN 512
 
 struct Ball {
@@ -91,11 +91,14 @@ namespace NETWORK{
             bool BindSock();
             int ConnectSock();
             bool AcceptClient();
-            Packet Receive();
-            bool Send();
+            Packet ReceiveS();
+            Packet ReceiveC();
+            bool SendS();
+            bool SendC();
             void AddressInfo();
-            bool GetAddressInfo();
             bool SockConnect();
+            bool GetAddressInfoC();
+            bool GetAddressInfoS();
 
             Packet deserializePacket(const char*,size_t);
             std::vector<char> serializePacket(const Packet&);
@@ -157,11 +160,21 @@ void NETWORK::NConnection::AddressInfo() {
     hints.ai_protocol = IPPROTO_TCP;
 };
 
-bool NETWORK::NConnection::GetAddressInfo() {
+bool NETWORK::NConnection::GetAddressInfoS() {
     // Resolve the server address and port
     iResult = getaddrinfo(NULL, DEFAULT_PORT, &this->hints, &this->result);
     if ( iResult != 0 ) {
         printf("getaddrinfo failed with error: %d\n", iResult);
+        WSACleanup();
+        return false;
+    }
+    return true;
+};
+
+bool NETWORK::NConnection::GetAddressInfoC() {
+    this->iResult = getaddrinfo(IPADDRESS, DEFAULT_PORT, &this->hints, &this->result);
+    if(this->iResult != 0) {
+        printf("getaddrinfo failed with error: %d\n", this->iResult);
         WSACleanup();
         return false;
     }
@@ -181,7 +194,7 @@ bool NETWORK::NConnection::AcceptClient() {
     
 };
 
-Packet NETWORK::NConnection::Receive() {
+Packet NETWORK::NConnection::ReceiveS() {
     iResult = recv(ClientSocket, recvBuffer, sizeof recvBuffer, 0);
     std::cout << iResult << "iResult" << std::endl;
     if (iResult > 0) {
@@ -196,12 +209,38 @@ Packet NETWORK::NConnection::Receive() {
     return this->m_packet;
 };
 
-bool NETWORK::NConnection::Send() {
+Packet NETWORK::NConnection::ReceiveS() {
+    iResult = recv(ClientSocket, recvBuffer, sizeof recvBuffer, 0);
+    std::cout << iResult << "iResult" << std::endl;
+    if (iResult > 0) {
+        printf("Bytes received: %d\n", iResult);
+
+        m_packet = deserializePacket(recvBuffer,iResult);
+        for(size_t i = 0; i < m_packet.players.size(); ++i) {
+            //std::cout << m_packet.players[i].balls.ballPosition
+            std::cout << "Player id: " << m_packet.players[i].id << "\n";
+        }
+    }
+    return this->m_packet;
+};
+
+bool NETWORK::NConnection::SendS() {
     std::vector<char> recvecBuffer = serializePacket(this->m_packet);
     this->iResult = send( ClientSocket, recvecBuffer.data(), sizeof recvecBuffer, 0 );
     if (this->iResult == SOCKET_ERROR) {
         printf("send failed with error: %d\n", WSAGetLastError());
         closesocket(ClientSocket);
+        WSACleanup();
+        return false;
+    }
+    return true;
+};
+bool NETWORK::NConnection::SendC() {
+    std::vector<char> recvecBuffer = serializePacket(this->m_packet);
+    this->iResult = send( this->ConnectSocket, recvecBuffer.data(), sizeof recvecBuffer, 0 );
+    if (this->iResult == SOCKET_ERROR) {
+        printf("send failed with error: %d\n", WSAGetLastError());
+        closesocket(this->ConnectSocket);
         WSACleanup();
         return false;
     }
@@ -223,7 +262,15 @@ bool NETWORK::NConnection::SockConnect() {
             ConnectSocket = INVALID_SOCKET;
             continue;
         }
+        break;
     }
+
+    if(this->ConnectSocket == INVALID_SOCKET) {
+        printf("Unable to connect to server!\n");
+        WSACleanup();
+        return false;
+    }
+
     return true;
 };
 
@@ -267,7 +314,7 @@ NETWORK::NConnection::NConnection() {
         if (iResult != 0) {
             printf("WSAStartup failed with error: %d\n", iResult);
         }
-        std::cout << "WSAStartup " << iResult << "\n";
+        std::cout << "WSAStartup did not fail: " << iResult << "\n";
     #endif
 };
 
@@ -619,6 +666,7 @@ int main() {
     Client.AddressInfo();
     Packet packets;
 
+
     //struct addrinfo* ptr = NULL;
 
     while(menuWindow) {
@@ -635,11 +683,12 @@ int main() {
                 ClearBackground(RAYWHITE);
                 DrawText("WAITING FOR CLIENT",GetScreenWidth()/2.0f, GetScreenHeight()/2.0f,30,RED);
                 EndDrawing();
-                Server.GetAddressInfo();
+                Server.GetAddressInfoS();
                 Server.SetSock();
                 Server.BindSock();
                 Server.ListenSock();
                 if(Server.AcceptClient()) menuWindow = false;
+                std::cout << "Client Accepted\n";
                 /*try {
                     serverThread = std::thread(startServer);
                 } catch(const std::exception& e) {
@@ -658,7 +707,7 @@ int main() {
                 ClearBackground(RAYWHITE);
                 DrawText("LOOKING FOR A SERVER",GetScreenWidth()/2.0f, GetScreenHeight()/2.0f,30,RED);
                 EndDrawing();
-                Client.GetAddressInfo();
+                Client.GetAddressInfoC();
                 if(Client.SockConnect()) menuWindow = false;
             }
         }
@@ -678,11 +727,10 @@ int main() {
         BeginDrawing();
         DrawFPS(10,10);
         ClearBackground(RAYWHITE);
-        //Pong_Ball(ballPosition, ballSpeed, ballRadius);
         Pong_Ball(packets.players[0].balls.ballPosition, 
                   packets.players[0].balls.ballSpeed,
                   packets.players[0].balls.ballRadius);
-        std::cout << packets.players[0].balls.ballPosition.x << packets.players[0].balls.ballPosition.y << std::endl;
+        std::cout << packets.players[0].balls.ballPosition.x << " x " << packets.players[0].balls.ballPosition.y << "y\n";
         std::cout << "Pong ball moving\n";
         for(size_t i = 0; i < packets.players.size(); ++i) {
             DrawCircleV(packets.players[i].balls.ballPosition,
@@ -698,9 +746,9 @@ int main() {
         std::cout << clientPacket.players.size() << std::endl;
         for(size_t i = 0; i < clientPacket.players.size(); ++i) {
             std::cout << clientPacket.players[i].id << " clientpacket\n";
-            std::cout << " fja;sdlkf\n";
         }
         std::cout << "Received\n";
+        EndDrawing();
     }
 
     while(clientWindow) {
@@ -719,6 +767,7 @@ int main() {
             MAROON);
         }
         Client.Send();
+        EndDrawing();
     }
 /*
 else {
@@ -733,9 +782,9 @@ else {
 
 */    
 
-    if(serverThread.joinable()) {
-        serverThread.join();
-    }
+    // if(serverThread.joinable()) {
+    //     serverThread.join();
+    // }
     return 0;
       
 };
