@@ -44,8 +44,8 @@
 #include <cstring>
 #include <thread>
 
-#define DEFAULT_PORT "8080"
-#define IPADDRESS "192.168.1.222"
+#define DEFAULT_PORT "8083"
+#define IPADDRESS "127.0.0.1"
 #define DEFAULT_BUFLEN 512
 
 struct Ball {
@@ -209,8 +209,8 @@ Packet NETWORK::NConnection::ReceiveS() {
     return this->m_packet;
 };
 
-Packet NETWORK::NConnection::ReceiveS() {
-    iResult = recv(ClientSocket, recvBuffer, sizeof recvBuffer, 0);
+Packet NETWORK::NConnection::ReceiveC() {
+    iResult = recv(this->ConnectSocket, recvBuffer, sizeof recvBuffer, 0);
     std::cout << iResult << "iResult" << std::endl;
     if (iResult > 0) {
         printf("Bytes received: %d\n", iResult);
@@ -258,12 +258,15 @@ bool NETWORK::NConnection::SockConnect() {
 
         this->iResult = connect(this->ConnectSocket, this->ptr->ai_addr, (int)this->ptr->ai_addrlen);
         if (this->iResult == SOCKET_ERROR) {
+            printf("Could not connect: %d\n", WSAGetLastError());
             closesocket(this->ConnectSocket);
             ConnectSocket = INVALID_SOCKET;
             continue;
         }
         break;
     }
+    
+    freeaddrinfo(this->result);
 
     if(this->ConnectSocket == INVALID_SOCKET) {
         printf("Unable to connect to server!\n");
@@ -668,6 +671,8 @@ int main() {
 
 
     //struct addrinfo* ptr = NULL;
+    Player playerServer(rand()%1000);
+    packets.players.push_back(playerServer);
 
     while(menuWindow) {
         mousePoint = GetMousePosition();
@@ -675,8 +680,6 @@ int main() {
         //Menu
         if(CheckCollisionPointRec(mousePoint, btnBoundServer)){
             if(IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-                Player playerServer(rand()%1000);
-                packets.players.push_back(playerServer);
                 Server.m_packet = packets;
                 serverWindow = true;
                 BeginDrawing();
@@ -699,15 +702,12 @@ int main() {
 
         if(CheckCollisionPointRec(mousePoint, btnBoundClient)){
             if(IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-                Player playerClient(rand()%1000);
-                packets.players.push_back(playerClient);
-                Client.m_packet = packets;
                 clientWindow = true;
                 BeginDrawing();
                 ClearBackground(RAYWHITE);
                 DrawText("LOOKING FOR A SERVER",GetScreenWidth()/2.0f, GetScreenHeight()/2.0f,30,RED);
                 EndDrawing();
-                Client.GetAddressInfoC();
+                if(!Client.GetAddressInfoC()) break;
                 if(Client.SockConnect()) menuWindow = false;
             }
         }
@@ -739,10 +739,10 @@ int main() {
         }
 
         std::cout << "Server about to send\n";
-        if(Server.Send()){
+        if(Server.SendS()){
             std::cout << "Server sent\n";
         }
-        clientPacket = Server.Receive();
+        clientPacket = Server.ReceiveS();
         std::cout << clientPacket.players.size() << std::endl;
         for(size_t i = 0; i < clientPacket.players.size(); ++i) {
             std::cout << clientPacket.players[i].id << " clientpacket\n";
@@ -757,7 +757,7 @@ int main() {
         DrawFPS(10,10);
         ClearBackground(RAYWHITE);
         //Pong_Ball(ballPosition, ballSpeed, ballRadius);
-        packets = Client.Receive();
+        packets = Client.ReceiveC();
         std::cout << "Client received\n";
         std::cout << packets.players.size() << " player size\n";
         for(size_t i = 0; i< packets.players.size(); ++i) {
@@ -766,7 +766,7 @@ int main() {
             (float)packets.players[i].balls.ballRadius,
             MAROON);
         }
-        Client.Send();
+        Client.SendC();
         EndDrawing();
     }
 /*
