@@ -766,6 +766,10 @@ int main() {
     bool clientWindow = false, serverWindow = false;
     std::thread serverThread;
 
+    //Scoped shared_ptr<>
+    std::shared_ptr<NETWORK::Server> serv;
+    std::shared_ptr<NETWORK::Client> clnt;
+
     while(menuWindow) {
         mousePoint = GetMousePosition();
 
@@ -773,6 +777,7 @@ int main() {
             if(IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
                 std::shared_ptr<NETWORK::Server> server(new NETWORK::Server());
                 server->InitServer();
+                serv = std::move(server);
             }
             
         }
@@ -780,6 +785,7 @@ int main() {
             if(IsMouseButtonDown(MOUSE_LEFT_BUTTON)) {
                 std::shared_ptr<NETWORK::Client> client(new NETWORK::Client());
                 client->InitClient();    
+                clnt = std::move(client);
             }
         }
 
@@ -792,117 +798,6 @@ int main() {
         EndDrawing();
     }
 
-    // while(menuWindow) {
-    //     mousePoint = GetMousePosition();
-        
-    //     //Menu
-    //     if(CheckCollisionPointRec(mousePoint, btnBoundServer)){
-    //         if(IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-    //             Server.m_packet = packets;
-    //             serverWindow = true;
-    //             BeginDrawing();
-    //             ClearBackground(RAYWHITE);
-    //             DrawText("WAITING FOR CLIENT",GetScreenWidth()/2.0f, GetScreenHeight()/2.0f,30,RED);
-    //             EndDrawing();
-    //             Server.GetAddressInfoS();
-    //             Server.SetSock();
-    //             Server.BindSock();
-    //             Server.ListenSock();
-    //             if(Server.AcceptClient()) menuWindow = false;
-    //             std::cout << "Client Accepted\n";
-    //             /*try {
-    //                 serverThread = std::thread(startServer);
-    //             } catch(const std::exception& e) {
-    //                 std::cerr << "Failed to start server thread: " << e.what() << "\n";
-    //             }*/ 
-    //         }
-    //     } 
-
-    //     if(CheckCollisionPointRec(mousePoint, btnBoundClient)){
-    //         if(IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-    //             clientWindow = true;
-    //             BeginDrawing();
-    //             ClearBackground(RAYWHITE);
-    //             DrawText("LOOKING FOR A SERVER",GetScreenWidth()/2.0f, GetScreenHeight()/2.0f,30,RED);
-    //             EndDrawing();
-    //             if(!Client.GetAddressInfoC()) break;
-    //             if(Client.SockConnect()) menuWindow = false;
-    //         }
-    //     }
-
-    //     BeginDrawing();
-    //     Menu();
-    //     DrawFPS(10,10);
-    //     ClearBackground(RAYWHITE);
-    //     Pong_Ball(ballPosition, ballSpeed, ballRadius);
-    //     DrawCircleV(ballPosition, (float)ballRadius, MAROON);
-    //     EndDrawing();
-    // }
-    // Packet clientPacket;
-
-    // while(serverWindow) {
-    //     std::cout << "Inside Server Window\n";
-    //     BeginDrawing();
-    //     DrawFPS(10,10);
-    //     ClearBackground(RAYWHITE);
-    //     Pong_Ball(packets.players[0].balls.ballPosition, 
-    //               packets.players[0].balls.ballSpeed,
-    //               packets.players[0].balls.ballRadius);
-    //     std::cout << packets.players[0].balls.ballPosition.x << " x " << packets.players[0].balls.ballPosition.y << "y\n";
-    //     std::cout << "Pong ball moving\n";
-    //     for(size_t i = 0; i < packets.players.size(); ++i) {
-    //         DrawCircleV(packets.players[i].balls.ballPosition,
-    //                     (float)packets.players[i].balls.ballRadius, 
-    //                     MAROON);
-    //     }
-
-    //     std::cout << "Server about to send\n";
-    //     if(Server.SendS()){
-    //         std::cout << "Server sent\n";
-    //     }
-    //     clientPacket = Server.ReceiveS();
-    //     std::cout << clientPacket.players.size() << std::endl;
-    //     for(size_t i = 0; i < clientPacket.players.size(); ++i) {
-    //         std::cout << clientPacket.players[i].id << " clientpacket\n";
-    //     }
-    //     std::cout << "Received\n";
-    //     EndDrawing();
-    // }
-
-    // while(clientWindow) {
-    //     std::cout << "Inside client window\n";
-    //     BeginDrawing();
-    //     DrawFPS(10,10);
-    //     ClearBackground(RAYWHITE);
-    //     //Pong_Ball(ballPosition, ballSpeed, ballRadius);
-    //     packets = Client.ReceiveC();
-    //     std::cout << "Client received\n";
-    //     std::cout << packets.players.size() << " player size\n";
-    //     for(size_t i = 0; i< packets.players.size(); ++i) {
-    //         std::cout << "packets" << packets.players[i].balls.ballPosition.x << std::endl;
-    //         DrawCircleV(packets.players[i].balls.ballPosition,
-    //         (float)packets.players[i].balls.ballRadius,
-    //         MAROON);
-    //     }
-    //     Client.SendC();
-    //     EndDrawing();
-    // }
-/*
-else {
-        BeginDrawing();
-        Menu();
-        DrawFPS(10,10);
-        ClearBackground(RAYWHITE);
-        Pong_Ball(ballPosition, ballSpeed, ballRadius);
-        DrawCircleV(ballPosition, (float)ballRadius, MAROON);
-        EndDrawing();
-    }
-
-*/    
-
-    // if(serverThread.joinable()) {
-    //     serverThread.join();
-    // }
     return 0;
       
 };
