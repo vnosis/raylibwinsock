@@ -74,7 +74,7 @@ typedef struct{
 } Packet;
 
 namespace NETWORK{
-    std::vector<char> serializePacket(Packet);
+    std::vector<char> serializePacket(Packet*);
     Packet desializePacket(const char*, size_t);
     class Server{
         private:
@@ -83,11 +83,11 @@ namespace NETWORK{
             SOCKET ClientSocket     = INVALID_SOCKET;
             struct addrinfo* result = NULL;
             struct addrinfo hints;
-            char recvbuf[DEFAULT_BUFLEN];
         public:
             //Constructor
             Server() = default;
             int iResult, iSendResult;
+            char recvbuf[DEFAULT_BUFLEN];
 
             //Init WSAInit
             bool WSAInit();
@@ -121,11 +121,11 @@ namespace NETWORK{
             struct addrinfo *result = NULL,
                             *ptr = NULL,
                             hints;
-            char recvbuf[DEFAULT_BUFLEN];
         public:
-
             Client() = default;
             int iResult;
+            char recvbuf[DEFAULT_BUFLEN];
+
             //Initialize Winsock
             bool WSAInit();
             //Initialize hints addrinfo
@@ -222,7 +222,7 @@ namespace NETWORK{
     }
     bool Client::Send(std::vector<char> packet)
     {
-        this->iResult = send(this->ConnectSocket, packet.data(), sizeof packet, 0);
+        this->iResult = send(this->ConnectSocket, packet.data(), sizeof packet.data(), 0);
         if( this->iResult ==  SOCKET_ERROR) {
             printf("send failed with error: %d\n", WSAGetLastError());
             closesocket(this->ConnectSocket);
@@ -258,14 +258,15 @@ namespace NETWORK{
         }
         return true;
     }
-    std::vector<char> serializePacket(Packet packet)
+    std::vector<char> serializePacket(Packet* packet)
     {
         std::vector<char> buffer;
 
-        size_t numPlayers = packet.players.size();
+        size_t numPlayers = packet->players.size();
+
         buffer.insert(buffer.end(), reinterpret_cast<const char*>(&numPlayers),reinterpret_cast<const char*>(&numPlayers) + sizeof(numPlayers));
 
-        for(const Player& player: packet.players) {
+        for(const Player& player: packet->players) {
             buffer.insert(buffer.end(), reinterpret_cast<const char*>(&player), reinterpret_cast<const char*>(&player) + sizeof(Player));
         }
 
@@ -361,7 +362,8 @@ namespace NETWORK{
         }
         //No longer need server socket if one player is connecting 
         //Delete if i decide to have more players join
-        closesocket(ListenSocket);
+        //closesocket(ListenSocket);
+        
         return true;
     }
     bool Server::InitServer()
@@ -397,7 +399,7 @@ namespace NETWORK{
     }
     bool Server::Send(std::vector<char> recvbuffer)
     {
-        this->iSendResult = send(ClientSocket, recvbuffer.data(), sizeof recvbuffer, 0);
+        this->iSendResult = send(ClientSocket, recvbuffer.data(), DEFAULT_BUFLEN, 0);
         if(iSendResult == SOCKET_ERROR) {
             printf("send failed with error: %d\n", WSAGetLastError());
             closesocket(ClientSocket);
@@ -650,7 +652,7 @@ int startClient() {
     }
 
     // Send an initial buffer
-    std::vector<char> recvecBuffer = NETWORK::serializePacket(playerpacket);
+    std::vector<char> recvecBuffer = NETWORK::serializePacket(&playerpacket);
     iResult = send( ConnectSocket, recvecBuffer.data(), sizeof recvecBuffer, 0 );
     if (iResult == SOCKET_ERROR) {
         printf("send failed with error: %d\n", WSAGetLastError());
@@ -744,6 +746,11 @@ int main() {
     const int screenWidth  = 800;
     const int screenHeight = 450;
 
+    std::shared_ptr<Packet> serverPacket(new Packet());
+    std::shared_ptr<Packet> clientPacket(new Packet());
+    std::shared_ptr<Player> serverPlayer;
+    std::shared_ptr<Player> clientPlayer;
+
     SetConfigFlags(FLAG_MSAA_4X_HINT);
     InitWindow(screenWidth, screenHeight, "Pong Test");
     Vector2 ballPosition = {GetScreenWidth()/2.0f, GetScreenHeight()/2.0f};
@@ -775,20 +782,26 @@ int main() {
 
         if(CheckCollisionPointRec(mousePoint, btnBoundServer)) {
             if(IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-                std::shared_ptr<NETWORK::Server> server(new NETWORK::Server());
+                serverWindow = true;
+                menuWindow = false;
+                std::shared_ptr<NETWORK::Server> server(std::make_shared<NETWORK::Server>());
+                std::shared_ptr<Player> initServPlayer(std::make_shared<Player>(rand()%1000));
                 server->InitServer();
                 serv = std::move(server);
+                serverPlayer = std::move(initServPlayer);
             }
-            
         }
         if(CheckCollisionPointRec(mousePoint, btnBoundClient)) {
             if(IsMouseButtonDown(MOUSE_LEFT_BUTTON)) {
+                clientWindow = true;
+                menuWindow = false;
                 std::shared_ptr<NETWORK::Client> client(new NETWORK::Client());
+                std::shared_ptr<Player> initClntPlayer(std::make_shared<Player>(rand()%1000));
                 client->InitClient();    
                 clnt = std::move(client);
+                clientPlayer = std::move(initClntPlayer);
             }
         }
-
         BeginDrawing();
         Menu();
         DrawFPS(10,10);
@@ -798,6 +811,64 @@ int main() {
         EndDrawing();
     }
 
+    if (serverWindow) {
+        serverPacket->players.push_back(*serverPlayer);
+        serverPacket->players[0].balls.ballPosition = ballPosition;
+        serverPacket->players[0].balls.ballRadius   = ballRadius;
+        serverPacket->players[0].balls.ballSpeed    = ballSpeed;
+        std::cout << serverPacket->players[0].balls.ballPosition.x << std::endl; 
+        if(!serv->Receive()) std::cout << "Waiting for initial talk\n";
+        Packet recvPacket = NETWORK::desializePacket(serv->recvbuf, sizeof serv->recvbuf);
+        for(size_t i = 0; i < recvPacket.players.size(); ++i) {
+            std::cout << "Player id " << recvPacket.players[i].id << "\n";
+        }
+    }
+
+    if(clientWindow) {
+        clientPacket->players.push_back(*clientPlayer);
+        std::cout << "Sending Client id" << clientPlayer->id << "\n";
+        std::vector<char> serialPacket = NETWORK::serializePacket(clientPacket.get());
+        if(!clnt->Send(serialPacket)) std::cout << "Couldn't send Client Packet\n";
+    }
+    
+    while(serverWindow) {
+        BeginDrawing();
+        Menu();
+        DrawFPS(10,10);
+        ClearBackground(RAYWHITE);
+
+        Pong_Ball(serverPacket->players[0].balls.ballPosition, 
+                  serverPacket->players[0].balls.ballSpeed, 
+                  serverPacket->players[0].balls.ballRadius);
+        std::vector<char> serialPacket = NETWORK::serializePacket(serverPacket.get());
+        serv->Send(serialPacket);
+        DrawCircleV(serverPacket->players[0].balls.ballPosition, 
+                    (float)serverPacket->players[0].balls.ballRadius,
+                    MAROON);
+
+        std::cout << serverPacket->players[0].balls.ballPosition.x << " " << serverPacket->players[0].balls.ballPosition.y << " Ballposition\n";
+        //DrawCircleV(ballPosition, (float)ballRadius, MAROON);
+        EndDrawing();
+    }
+    while(clientWindow) {
+        BeginDrawing();
+        Menu();
+        DrawFPS(10,10);
+        ClearBackground(RAYWHITE);
+        // Pong_Ball(ballPosition, ballSpeed, ballRadius);
+        clnt->Receive();
+        Packet recvPacket = NETWORK::desializePacket(clnt->recvbuf, sizeof clnt->recvbuf);
+        std::cout << "Size of player vector " << recvPacket.players.size() << "\n";
+        for(size_t i = 0; i < recvPacket.players.size(); ++i) {
+            std::cout << recvPacket.players[i].id << std::endl;
+            std::cout << recvPacket.players[i].balls.ballPosition.x << " " << recvPacket.players[i].balls.ballPosition.y << " Ballposition\n";
+        }
+        DrawCircleV(recvPacket.players[0].balls.ballPosition,
+                   (float)recvPacket.players[0].balls.ballRadius,
+                   MAROON);
+        //DrawCircleV(ballPosition, (float)ballRadius, MAROON);
+        EndDrawing();
+    }
     return 0;
       
 };
