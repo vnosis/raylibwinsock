@@ -222,7 +222,7 @@ namespace NETWORK{
     }
     bool Client::Send(std::vector<char> packet)
     {
-        this->iResult = send(this->ConnectSocket, packet.data(), sizeof packet.data(), 0);
+        this->iResult = send(this->ConnectSocket, packet.data(), DEFAULT_BUFLEN, 0);
         if( this->iResult ==  SOCKET_ERROR) {
             printf("send failed with error: %d\n", WSAGetLastError());
             closesocket(this->ConnectSocket);
@@ -256,6 +256,7 @@ namespace NETWORK{
             WSACleanup();
             return false;
         }
+        std::cout << "Shutting Down Client Sockets" << std::endl;
         return true;
     }
     std::vector<char> serializePacket(Packet* packet)
@@ -441,6 +442,7 @@ namespace NETWORK{
         }
         closesocket(ClientSocket);
         WSACleanup();
+        std::cout << "Shutting Down Server Sockets" << std::endl;
         return true;
     }
 };
@@ -714,6 +716,11 @@ void Menu() {
 
 //TODO 
 //Close window function and close connection
+void CheckWindow(bool& userwindow) {
+    if(WindowShouldClose() || IsKeyPressed(KEY_ESCAPE)){
+        userwindow = !userwindow;
+    }
+};
 
 // Pong movement
 void Pong_Ball(Vector2& ballPosition, Vector2& ballSpeed, int& ballRadius) {
@@ -777,8 +784,12 @@ int main() {
     std::shared_ptr<NETWORK::Server> serv;
     std::shared_ptr<NETWORK::Client> clnt;
 
+    bool serverInit = false;
+    bool clientInit = false;
+
     while(menuWindow) {
         mousePoint = GetMousePosition();
+        CheckWindow(menuWindow);
 
         if(CheckCollisionPointRec(mousePoint, btnBoundServer)) {
             if(IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
@@ -786,7 +797,7 @@ int main() {
                 menuWindow = false;
                 std::shared_ptr<NETWORK::Server> server(std::make_shared<NETWORK::Server>());
                 std::shared_ptr<Player> initServPlayer(std::make_shared<Player>(rand()%1000));
-                server->InitServer();
+                if(server->InitServer()) serverInit = true;
                 serv = std::move(server);
                 serverPlayer = std::move(initServPlayer);
             }
@@ -797,7 +808,7 @@ int main() {
                 menuWindow = false;
                 std::shared_ptr<NETWORK::Client> client(new NETWORK::Client());
                 std::shared_ptr<Player> initClntPlayer(std::make_shared<Player>(rand()%1000));
-                client->InitClient();    
+                if(client->InitClient()) clientInit = true;
                 clnt = std::move(client);
                 clientPlayer = std::move(initClntPlayer);
             }
@@ -832,6 +843,7 @@ int main() {
     }
     
     while(serverWindow) {
+        CheckWindow(serverWindow);
         BeginDrawing();
         Menu();
         DrawFPS(10,10);
@@ -851,6 +863,7 @@ int main() {
         EndDrawing();
     }
     while(clientWindow) {
+        CheckWindow(clientWindow);
         BeginDrawing();
         Menu();
         DrawFPS(10,10);
@@ -859,16 +872,23 @@ int main() {
         clnt->Receive();
         Packet recvPacket = NETWORK::desializePacket(clnt->recvbuf, sizeof clnt->recvbuf);
         std::cout << "Size of player vector " << recvPacket.players.size() << "\n";
-        for(size_t i = 0; i < recvPacket.players.size(); ++i) {
-            std::cout << recvPacket.players[i].id << std::endl;
-            std::cout << recvPacket.players[i].balls.ballPosition.x << " " << recvPacket.players[i].balls.ballPosition.y << " Ballposition\n";
+        if(recvPacket.players.size()>0){
+            for(size_t i = 0; i < recvPacket.players.size(); ++i) {
+                std::cout << recvPacket.players[i].id << std::endl;
+                std::cout << recvPacket.players[i].balls.ballPosition.x << " " << recvPacket.players[i].balls.ballPosition.y << " Ballposition\n";
+                DrawCircleV(recvPacket.players[i].balls.ballPosition,
+                           (float)recvPacket.players[i].balls.ballRadius,
+                           MAROON);
+            }
         }
-        DrawCircleV(recvPacket.players[0].balls.ballPosition,
-                   (float)recvPacket.players[0].balls.ballRadius,
-                   MAROON);
         //DrawCircleV(ballPosition, (float)ballRadius, MAROON);
         EndDrawing();
     }
+
+    if(serverInit) serv->ShutdownInit();
+    if(clientInit) clnt->ShutDownInit();
+    CloseWindow();
+        
     return 0;
       
 };
