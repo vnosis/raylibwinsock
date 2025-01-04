@@ -46,8 +46,9 @@
 #include <memory>
 
 #define DEFAULT_PORT "8083"
-#define IPADDRESS "127.0.0.1"
-#define DEFAULT_BUFLEN 1024 //MAX MTU
+#define IPADDRESS "192.168.1.222"
+
+#define DEFAULT_BUFLEN 512 //MAX MTU
 
 struct Ball {
     Vector2 ballPosition;
@@ -723,7 +724,7 @@ void CheckWindow(bool& userwindow) {
 };
 
 // Pong movement
-void Pong_Ball(Vector2& ballPosition, Vector2& ballSpeed, int& ballRadius) {
+void Pong_Ball(Vector2& ballPosition, Vector2& ballSpeed, int& ballRadius, int& playerX) {
     ballPosition.x += ballSpeed.x;
     ballPosition.y += ballSpeed.y;
 
@@ -732,6 +733,15 @@ void Pong_Ball(Vector2& ballPosition, Vector2& ballSpeed, int& ballRadius) {
     if ((ballPosition.y >= (GetScreenHeight() - ballRadius)) || (ballPosition.y <= ballRadius))
         ballSpeed.y *= -1.0f;
 };
+
+// int Player_Location(int& playerY) {
+    
+// }
+
+void PlayerMovement(int& y) {
+    if(IsKeyDown(KEY_S)) y += 3.0f;
+    if(IsKeyDown(KEY_W)) y -= 3.0f;
+}
 
 struct ServerThread {
     static std::thread startServerThread;
@@ -748,14 +758,15 @@ struct ServerThread {
     
 };
 
-
 int main() {
     const int screenWidth  = 800;
     const int screenHeight = 450;
+    int playerInitial_Y = screenHeight/2;
 
     std::shared_ptr<Packet> serverPacket(new Packet());
     std::shared_ptr<Packet> clientPacket(new Packet());
     std::shared_ptr<Player> serverPlayer;
+
     std::shared_ptr<Player> clientPlayer;
 
     SetConfigFlags(FLAG_MSAA_4X_HINT);
@@ -786,6 +797,8 @@ int main() {
 
     bool serverInit = false;
     bool clientInit = false;
+    int playerInitial_X = 25; 
+    int clientInitial_X = GetScreenWidth() - 20;
 
     while(menuWindow) {
         mousePoint = GetMousePosition();
@@ -814,19 +827,25 @@ int main() {
             }
         }
         BeginDrawing();
+        PlayerMovement(playerInitial_Y);
+        // DrawRectangle(playerInitial_X, playerInitial_Y,20,50,RED);
         Menu();
         DrawFPS(10,10);
         ClearBackground(RAYWHITE);
-        Pong_Ball(ballPosition, ballSpeed, ballRadius);
+        Pong_Ball(ballPosition, ballSpeed, ballRadius, playerInitial_X);
         DrawCircleV(ballPosition, (float)ballRadius, MAROON);
         EndDrawing();
     }
+
 
     if (serverWindow) {
         serverPacket->players.push_back(*serverPlayer);
         serverPacket->players[0].balls.ballPosition = ballPosition;
         serverPacket->players[0].balls.ballRadius   = ballRadius;
         serverPacket->players[0].balls.ballSpeed    = ballSpeed;
+        serverPacket->players[0].x = playerInitial_X;
+        serverPacket->players[0].y = playerInitial_Y;
+
         std::cout << serverPacket->players[0].balls.ballPosition.x << std::endl; 
         if(!serv->Receive()) std::cout << "Waiting for initial talk\n";
         Packet recvPacket = NETWORK::desializePacket(serv->recvbuf, sizeof serv->recvbuf);
@@ -837,6 +856,9 @@ int main() {
 
     if(clientWindow) {
         clientPacket->players.push_back(*clientPlayer);
+        clientPacket->players[0].x = clientInitial_X;
+        clientPacket->players[0].y = playerInitial_Y;
+
         std::cout << "Sending Client id" << clientPlayer->id << "\n";
         std::vector<char> serialPacket = NETWORK::serializePacket(clientPacket.get());
         if(!clnt->Send(serialPacket)) std::cout << "Couldn't send Client Packet\n";
@@ -851,12 +873,36 @@ int main() {
 
         Pong_Ball(serverPacket->players[0].balls.ballPosition, 
                   serverPacket->players[0].balls.ballSpeed, 
-                  serverPacket->players[0].balls.ballRadius);
+                  serverPacket->players[0].balls.ballRadius, playerInitial_X);
         std::vector<char> serialPacket = NETWORK::serializePacket(serverPacket.get());
         serv->Send(serialPacket);
         DrawCircleV(serverPacket->players[0].balls.ballPosition, 
                     (float)serverPacket->players[0].balls.ballRadius,
                     MAROON);
+        
+        PlayerMovement(serverPacket->players[0].y);
+
+        DrawRectangle(serverPacket->players[0].x, 
+                      serverPacket->players[0].y,
+                      20,
+                      50,
+                      RED);
+
+        serv->Receive();
+        Packet recvPacket = NETWORK::desializePacket(serv->recvbuf, sizeof serv->recvbuf);
+        std::cout << "Size of player vector " << recvPacket.players.size() << "\n";
+        if(recvPacket.players.size()>0){
+            for(size_t i = 0; i < recvPacket.players.size(); ++i) {
+                std::cout << recvPacket.players[i].id << std::endl;
+                std::cout << recvPacket.players[i].balls.ballPosition.x << " " << recvPacket.players[i].balls.ballPosition.y << " Ballposition\n";
+                std::cout << recvPacket.players[i].x << " " << recvPacket.players[i].y << " Ballposition\n";
+                DrawRectangle(recvPacket.players[i].x,
+                              recvPacket.players[i].y,
+                              20,
+                              50,
+                              RED);
+            }
+        }
 
         std::cout << serverPacket->players[0].balls.ballPosition.x << " " << serverPacket->players[0].balls.ballPosition.y << " Ballposition\n";
         //DrawCircleV(ballPosition, (float)ballRadius, MAROON);
@@ -866,21 +912,37 @@ int main() {
         CheckWindow(clientWindow);
         BeginDrawing();
         Menu();
+        PlayerMovement(clientPacket->players[0].y);
         DrawFPS(10,10);
         ClearBackground(RAYWHITE);
         // Pong_Ball(ballPosition, ballSpeed, ballRadius);
         clnt->Receive();
         Packet recvPacket = NETWORK::desializePacket(clnt->recvbuf, sizeof clnt->recvbuf);
         std::cout << "Size of player vector " << recvPacket.players.size() << "\n";
+        DrawRectangle(clientPacket->players[0].x,
+                      clientPacket->players[0].y,
+                      20,
+                      50,
+                      RED);
         if(recvPacket.players.size()>0){
             for(size_t i = 0; i < recvPacket.players.size(); ++i) {
                 std::cout << recvPacket.players[i].id << std::endl;
                 std::cout << recvPacket.players[i].balls.ballPosition.x << " " << recvPacket.players[i].balls.ballPosition.y << " Ballposition\n";
+                std::cout << recvPacket.players[i].x << " " << recvPacket.players[i].y << " Ballposition\n";
                 DrawCircleV(recvPacket.players[i].balls.ballPosition,
                            (float)recvPacket.players[i].balls.ballRadius,
                            MAROON);
+
+                DrawRectangle(recvPacket.players[i].x, 
+                            recvPacket.players[i].y,
+                            20,
+                            50,
+                            RED);
             }
         }
+        
+        std::vector<char> serialClntPacket = NETWORK::serializePacket(clientPacket.get());
+        clnt->Send(serialClntPacket);
         //DrawCircleV(ballPosition, (float)ballRadius, MAROON);
         EndDrawing();
     }
