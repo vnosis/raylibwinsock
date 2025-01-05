@@ -292,6 +292,8 @@ namespace NETWORK{
         }
         return packet;
     }
+    //Might need to fix this for 10093 error that pops up every now and then. 
+    //Sometimes a netsh winsock reset fixes the issue. 
     bool Server::WSAInit()
     {
         this->iResult = WSAStartup(MAKEWORD(2,2), &this->wsaData);
