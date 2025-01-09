@@ -560,7 +560,6 @@ int main() {
         EndDrawing();
     }
 
-
     if (serverWindow) {
         serverPacket->players.push_back(*serverPlayer);
         serverPacket->players[0].balls.ballPosition = ballPosition;
@@ -590,7 +589,6 @@ int main() {
     while(serverWindow) {
         CheckWindow(serverWindow);
         BeginDrawing();
-        Menu();
         DrawFPS(10,10);
         ClearBackground(RAYWHITE);
 
@@ -598,7 +596,11 @@ int main() {
                   serverPacket->players[0].balls.ballSpeed, 
                   serverPacket->players[0].balls.ballRadius, playerInitial_X);
         std::vector<char> serialPacket = NETWORK::serializePacket(serverPacket.get());
-        serv->Send(serialPacket);
+        if(!serv->Send(serialPacket)) {
+            serv->ShutdownInit();
+            serverInit = false;
+            serverWindow = false;
+        }
         DrawCircleV(serverPacket->players[0].balls.ballPosition, 
                     (float)serverPacket->players[0].balls.ballRadius,
                     MAROON);
@@ -634,7 +636,6 @@ int main() {
     while(clientWindow) {
         CheckWindow(clientWindow);
         BeginDrawing();
-        Menu();
         PlayerMovement(clientPacket->players[0].y);
         DrawFPS(10,10);
         ClearBackground(RAYWHITE);
@@ -665,13 +666,16 @@ int main() {
         }
         
         std::vector<char> serialClntPacket = NETWORK::serializePacket(clientPacket.get());
-        clnt->Send(serialClntPacket);
-        //DrawCircleV(ballPosition, (float)ballRadius, MAROON);
+        if(!clnt->Send(serialClntPacket)) {
+            clnt->ShutDownInit();
+            clientInit = false;
+            clientWindow = false;
+        };
         EndDrawing();
     }
 
-    if(serverInit) serv->ShutdownInit();
-    if(clientInit) clnt->ShutDownInit();
+    // if(serverInit) serv->ShutdownInit();
+    // if(clientInit) clnt->ShutDownInit();
     CloseWindow();
         
     return 0;
