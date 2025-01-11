@@ -73,6 +73,7 @@ typedef struct{
     std::vector<Player> players;
 } Packet;
 
+//Network wrapper for winsock
 namespace NETWORK{
     std::vector<char> serializePacket(Packet*);
     Packet desializePacket(const char*, size_t);
@@ -457,7 +458,6 @@ void Menu() {
     DrawText("Client", GetScreenWidth()/5.0f, GetScreenHeight()/2.0f, 20, BLUE);
 };
 
-//TODO 
 //Close window function and close connection
 void CheckWindow(bool& userwindow) {
     if(WindowShouldClose() || IsKeyPressed(KEY_ESCAPE)){
@@ -479,7 +479,39 @@ void Pong_Ball(Vector2& ballPosition, Vector2& ballSpeed, int& ballRadius, int& 
 void PlayerMovement(int& y) {
     if(IsKeyDown(KEY_S)) y += 3.0f;
     if(IsKeyDown(KEY_W)) y -= 3.0f;
-}
+};
+
+//Have users reading from config file
+Vector2 ballPosition(){
+}; 
+
+class Menu{
+    private:
+        Vector2 ballPosition = {GetScreenWidth()/2.0f, GetScreenHeight()/2.0f};
+        Vector2 ballSpeed    = { 5.0f, 4.0f };
+
+    public:
+        Menu() = default;
+
+        //Disallow heap allocation 
+        void* operator new(size_t) = delete;
+        void operator delete(void*) = delete;
+        void* operator new[](size_t) = delete;
+        void operator delete[](void*) = delete;
+};
+
+class Lobby {
+    private:
+    public:
+};
+
+
+class GameState{
+    private:
+    public:
+};
+
+
 
 int main() {
     const int screenWidth  = 800;
@@ -494,8 +526,7 @@ int main() {
 
     SetConfigFlags(FLAG_MSAA_4X_HINT);
     InitWindow(screenWidth, screenHeight, "Pong Test");
-    Vector2 ballPosition = {GetScreenWidth()/2.0f, GetScreenHeight()/2.0f};
-    Vector2 ballSpeed    = { 5.0f, 4.0f };
+    
     int ballRadius       = 20;
 
     //Mouse
