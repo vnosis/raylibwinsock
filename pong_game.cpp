@@ -451,12 +451,6 @@ namespace NETWORK{
 };
 
 //Create Menu Window
-void Menu() {
-    DrawRectangle(GetScreenWidth()/2.0f, GetScreenHeight()/2.0f, 60,20, BLUE);
-    DrawRectangle(GetScreenWidth()/5.0f, GetScreenHeight()/2.0f, 60,20, RED);
-    DrawText("Server", GetScreenWidth()/2.0f, GetScreenHeight()/2.0f, 20, RED);
-    DrawText("Client", GetScreenWidth()/5.0f, GetScreenHeight()/2.0f, 20, BLUE);
-};
 
 //Close window function and close connection
 void CheckWindow(bool& userwindow) {
@@ -482,9 +476,7 @@ void PlayerMovement(int& y) {
 };
 
 //Have users reading from config file
-Vector2 ballPosition(){
-}; 
-
+//not sure if i should make this into  
 class Menu{
     private:
         Vector2 ballPosition = {GetScreenWidth()/2.0f, GetScreenHeight()/2.0f};
@@ -498,6 +490,13 @@ class Menu{
         void operator delete(void*) = delete;
         void* operator new[](size_t) = delete;
         void operator delete[](void*) = delete;
+
+        void Draw_Menu() {
+            DrawRectangle(GetScreenWidth()/2.0f, GetScreenHeight()/2.0f, 60,20, BLUE);
+            DrawRectangle(GetScreenWidth()/5.0f, GetScreenHeight()/2.0f, 60,20, RED);
+            DrawText("Server", GetScreenWidth()/2.0f, GetScreenHeight()/2.0f, 20, RED);
+            DrawText("Client", GetScreenWidth()/5.0f, GetScreenHeight()/2.0f, 20, BLUE);
+        }
 };
 
 class Lobby {
@@ -510,8 +509,6 @@ class GameState{
     private:
     public:
 };
-
-
 
 int main() {
     const int screenWidth  = 800;
