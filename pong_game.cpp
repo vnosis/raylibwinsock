@@ -49,11 +49,39 @@
 
 #define DEFAULT_BUFLEN 512 //MAX MTU
 
+
+//Template array for balls and players
+template<typename T, int N>
+class Array {
+    private:
+        T elem[N];
+        std::vector<T> vElem{};
+    public:
+        Array() = default;
+
+        //Template copy 
+        template<typename T, int N>
+        Array<T,N>& operator=(const Array<T,N>& other) {
+            this->vElem.clear();
+            this->vElem.insert(this->vElem.begin(), other.vElem.begin(), other.vElem.end());
+            return *this;
+        }
+        int getsize() const;
+
+};
+
+template<typename T, int N>
+int Array<T, N>::getsize() const {
+    return N;
+}
+
+
 struct Ball {
     Vector2 ballPosition;
     Vector2 ballSpeed;
     int ballRadius;
 };
+
 
 struct Player{
     int id;
@@ -508,6 +536,7 @@ class Lobby {
 class GameState{
     private:
     public:
+    GameState() = default;
 };
 
 int main() {
